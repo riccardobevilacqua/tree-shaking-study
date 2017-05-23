@@ -1,9 +1,9 @@
 const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 
 let data = '';
-
-let readableStream = fs.createReadStream('/home/rbevila/lab/tree-shaking-study/examples/fn/01/index.js');
+let readableStream = fs.createReadStream(path.resolve('./examples/fn/01/index.js'));
 
 readableStream.on('data', function(chunk) {
     data+=chunk;
