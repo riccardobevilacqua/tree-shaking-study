@@ -1,0 +1,8 @@
+{
+  "name": "tree-shaking-study",
+  "version": "1.0.0",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^7.0.22"
+  }
+}
