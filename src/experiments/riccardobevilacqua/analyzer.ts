@@ -15,33 +15,12 @@
  * 4) origin exported functions
  * 5) origin private declared functions
  * 
- * Example 01
- * 
- * Analysis of index.js should prduce:
- * 1) Modules:
- *      - lib
- * 2) Declared functions: none
- * 3) Invoked functions:
- *      - name
- *      - doublePlusOne
- *      - console.log
- * 
- * Analysis of lib.js should produce:
- * 1) Modules: none
- * 2) Declared functions:
- *      - name (exported)
- *      - double (exported)
- *      - doublePlusOne (exported)
- *      - subX (since it is never used it should be excluded in final output)
- * 3) Invoked functions:
- *      - increment
- *      - double
- *      - addX
  */
 
 import { readFile } from 'fs';
 import { resolve } from 'path';
-import { Node, parse } from 'esprima';
+import * as estree from '@types/estree';
+import * as acorn from 'acorn';
 import { Observable, Subject, BehaviorSubject } from 'rxjs/Rx';
 
 interface TreeItem {
@@ -101,14 +80,18 @@ class Analyzer {
                 ) => readFile(path, encoding, callback));
 
                 return  readFileAsObservable(file, this.encoding);
-            }).flatMap(code => {
-                const codeAsObservable = Observable.fromEventPattern(handler => 
-                    parse(code, { sourceType: 'module' }, handler)
-                );
+            })
+            .flatMap(code => {
+                const ast = acorn.parse(code, {
+                    ecmaVersion: 6,
+                    sourceType: 'module',
+                    allowImportExportEverywhere: true
+                });
 
-                return codeAsObservable;
-            }).share();
-        
+                return Observable.from(ast.body);
+            })
+            .share();
+
         const imports = this.scanImports(nodes);
         const declared = this.scanDeclared(nodes);
         const invoked = this.scanInvoked(nodes);
@@ -132,25 +115,25 @@ class Analyzer {
         });
     }
 
-    scanImports(nodes: Observable<Node>): Observable<string>  {
+    scanImports(nodes: any): any  {
         return nodes
             .filter(node => node.type === 'ImportDeclaration')
             .map(node => node.source.value);
     }
 
-    scanInvoked(nodes: Observable<Node>): Observable<string> {
+    scanInvoked(nodes: any): Observable<string> {
         return nodes
             .filter(node => node.type === 'CallExpression' && node.callee.type === 'Identifier')
             .map(node => node.callee.name);
     }
 
-    scanDeclared(nodes: Observable<Node>): Observable<string> {
+    scanDeclared(nodes: any): Observable<string> {
         return nodes
             .filter(node => node.type === 'FunctionDeclaration')
             .map(node => node.id.name);
     }
 
-    scanExported(nodes: Observable<Node>): Observable<string> {
+    scanExported(nodes: any): Observable<string> {
         return nodes
             .filter(node => node.type === 'ExportNamedDeclaration')
             .map(node => node.declaration.id.name);
