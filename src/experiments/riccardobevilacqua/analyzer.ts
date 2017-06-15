@@ -20,7 +20,8 @@
 import { readFile } from 'fs';
 import { resolve } from 'path';
 import * as estree from '@types/estree';
-import * as acorn from 'acorn';
+import { parse} from 'acorn';
+import { walk } from 'acorn/dist/walk';
 import { Observable, Subject, BehaviorSubject } from 'rxjs/Rx';
 
 interface TreeItem {
@@ -56,8 +57,8 @@ class Analyzer {
 
         this.tree.subscribe({
             next: (snapshot) => {
-                console.log('==== TREE:');
-                snapshot.map(item => console.info(item));
+                // console.log('==== TREE:');
+                // snapshot.map(item => console.info(item));
             }
         });
 
@@ -67,76 +68,78 @@ class Analyzer {
     analyzeFile(filename: string): void {
         this.addTreeElement(filename);
         this.scanNodes(filename);
-    }
+    }    
 
     scanNodes(filename: string) {
-        const nodes = Observable
-            .from([filename])
-            .flatMap(file => {
-                const readFileAsObservable = Observable.bindNodeCallback((
-                    path: string,
-                    encoding: string,
-                    callback: (error: Error, buffer: Buffer) => void
-                ) => readFile(path, encoding, callback));
+        const readFileAsObservable = Observable.bindNodeCallback((
+            path: string,
+            encoding: string,
+            callback: (error: Error, buffer: Buffer) => void
+        ) => readFile(path, encoding, callback));
 
-                return  readFileAsObservable(file, this.encoding);
-            })
+        const nodes = readFileAsObservable(filename, this.encoding)
             .flatMap(code => {
-                const ast = acorn.parse(code, {
+                const parsedCode: estree.Program = parse(code, {
                     ecmaVersion: 6,
                     sourceType: 'module',
                     allowImportExportEverywhere: true
                 });
 
-                return Observable.from(ast.body);
+                return Observable.from(parsedCode.body);
             })
             .share();
 
-        const imports = this.scanImports(nodes);
-        const declared = this.scanDeclared(nodes);
-        const invoked = this.scanInvoked(nodes);
-        const exported = this.scanExported(nodes);
-
-        imports.subscribe(value => {
-            this.feedTreeElement(filename, 'imports', value);
-            this.files.next(value);
+        nodes.subscribe(value => {
+            walk.simple(value, {
+                Literal(node) {
+                    console.info(node);
+                }
+            })
         });
 
-        declared.subscribe(value => {
-            this.feedTreeElement(filename, 'declared', value);
-        });
+        // const imports = this.scanImports(nodes);
+        // const declared = this.scanDeclared(nodes);
+        // const invoked = this.scanInvoked(nodes);
+        // const exported = this.scanExported(nodes);
 
-        invoked.subscribe(value => {
-            this.feedTreeElement(filename, 'invoked', value);
-        });
+        // imports.subscribe(value => {
+        //     this.feedTreeElement(filename, 'imports', value);
+        //     this.files.next(value);
+        // });
 
-        exported.subscribe(value => {
-            this.feedTreeElement(filename, 'exported', value);
-        });
+        // declared.subscribe(value => {
+        //     this.feedTreeElement(filename, 'declared', value);
+        // });
+
+        // invoked.subscribe(value => {
+        //     this.feedTreeElement(filename, 'invoked', value);
+        // });
+
+        // exported.subscribe(value => {
+        //     this.feedTreeElement(filename, 'exported', value);
+        // });
     }
 
-    scanImports(nodes: any): any  {
+    scanImports(nodes: Observable<estree.Node>): Observable<string>  {
         return nodes
             .filter(node => node.type === 'ImportDeclaration')
-            .map(node => node.source.value);
+            .map(node => (<estree.ImportDeclaration> node).source.value);
     }
-
-    scanInvoked(nodes: any): Observable<string> {
+    
+    scanDeclared(nodes: Observable<estree.Node>): Observable<string> {
         return nodes
-            .filter(node => node.type === 'CallExpression' && node.callee.type === 'Identifier')
-            .map(node => node.callee.name);
+            .filter(node => node.type === 'ExpressionStatement')
+            .map(node => (<estree.FunctionDeclaration> node).id.name);
     }
 
-    scanDeclared(nodes: any): Observable<string> {
-        return nodes
-            .filter(node => node.type === 'FunctionDeclaration')
-            .map(node => node.id.name);
+    scanInvoked(nodes: Observable<estree.Node>): any {
+        return nodes;
     }
 
-    scanExported(nodes: any): Observable<string> {
+    scanExported(nodes: Observable<estree.Node>): Observable<string> {
         return nodes
             .filter(node => node.type === 'ExportNamedDeclaration')
-            .map(node => node.declaration.id.name);
+            .map(node => (<estree.ExportNamedDeclaration> node).declaration.id.name);
     }
 
     addTreeElement(filename: string): TreeItem[] {
