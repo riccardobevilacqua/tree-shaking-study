@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { dirname } from 'path';
-import { Observable, Subject } from 'rxjs/Rx';
+import { BehaviorSubject, Observable, Subject } from 'rxjs/Rx';
 import * as babylon from 'babylon';
 import * as babelTypes from 'babel-types';
 import * as jscodeshift from 'jscodeshift';
@@ -15,16 +15,20 @@ export default class Crawler {
     encoding: string
     entryPoint: string
     resolver: Resolver = new Resolver()
-    filesSubject: Subject<IResolverModule> = new Subject<IResolverModule>()
+    moduleStream: BehaviorSubject<IResolverModule[]>
 
     constructor(entryPoint: string, encoding: string = 'utf8') { 
         this.entryPoint = entryPoint;
         this.encoding = encoding;
+        
+        this.moduleStream = new BehaviorSubject<IResolverModule[]>([{id: this.entryPoint}]);
     }
 
     getASTStream(): Observable<babelTypes.File> {
-        const astStream: Observable<babelTypes.File> = this.filesSubject
-            .map((dep: IResolverModule) => this.resolver.resolve(dep))
+        const astStream: Observable<babelTypes.File> = this.moduleStream
+            .map((files: IResolverModule[]) => {
+                return this.resolver.resolve(files[files.length - 1])
+            })
             .map((fullPath: string) => {
                 console.log('== Processing file [' + fullPath + ']');
                 return <ICrawlerModule>{
@@ -39,13 +43,16 @@ export default class Crawler {
             next: (ast: babelTypes.File) => {
                 jscodeshift(ast)
                     .find(jscodeshift.ImportDeclaration)
-                    .forEach((nodePath) => {
-                        const dependency: IResolverModule = {
+                    .forEach((nodePath: jscodeshift.NodePath) => {
+                        const module: IResolverModule = {
                             id: nodePath.value.source.value,
                             context: dirname(nodePath.value.loc.filename),
                         };
+                        const modules: IResolverModule[] = this.moduleStream.getValue();
+                        
+                        modules.push(module);
 
-                        this.filesSubject.next(dependency);
+                        this.moduleStream.next(modules);
                     });
             }, 
             error: (err: Error) => {
@@ -57,12 +64,6 @@ export default class Crawler {
         });
 
         return astStream;
-    }
-
-    start(): void { 
-        this.filesSubject.next(<IResolverModule>{
-            id: this.entryPoint
-        });
     }
 
     getAST(module: ICrawlerModule): babelTypes.File { 
