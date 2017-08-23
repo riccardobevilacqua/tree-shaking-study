@@ -24,36 +24,37 @@ export default class Crawler {
         this.moduleStream = new BehaviorSubject<IResolverModule[]>([{id: this.entryPoint}]);
     }
 
-    getASTStream(): Observable<babelTypes.File> {
-        const astStream: Observable<babelTypes.File> = this.moduleStream
+    getASTStream(): Observable<babelTypes.File[]> {
+        const astListStream: Observable<babelTypes.File[]> = Observable
+            .of(this.moduleStream.getValue())
             .map((files: IResolverModule[]) => {
-                return this.resolver.resolve(files[files.length - 1])
+                return files
+                    .map(file => this.resolver.resolve(file))
+                    .map((fullPath: string) => {
+                        console.log('== Processing file [' + fullPath + ']');
+                        return <ICrawlerModule>{
+                            code: readFileSync(fullPath, this.encoding),
+                            fullPath
+                        }
+                    })
+                    .map((module: ICrawlerModule) => this.getAST(module));
             })
-            .map((fullPath: string) => {
-                console.log('== Processing file [' + fullPath + ']');
-                return <ICrawlerModule>{
-                    code: readFileSync(fullPath, this.encoding),
-                    fullPath
-                }
-            })
-            .map((module: ICrawlerModule) => this.getAST(module))
             .share();
 
-        astStream.subscribe({
-            next: (ast: babelTypes.File) => {
-                jscodeshift(ast)
-                    .find(jscodeshift.ImportDeclaration)
-                    .forEach((nodePath: jscodeshift.NodePath) => {
-                        const module: IResolverModule = {
-                            id: nodePath.value.source.value,
-                            context: dirname(nodePath.value.loc.filename),
-                        };
-                        const modules: IResolverModule[] = this.moduleStream.getValue();
-                        
-                        modules.push(module);
-
-                        this.moduleStream.next(modules);
-                    });
+        astListStream.subscribe({
+            next: (astList: babelTypes.File[]) => {
+                astList.map(ast => {
+                    return jscodeshift(ast)
+                        .find(jscodeshift.ImportDeclaration)
+                        .forEach((nodePath: jscodeshift.NodePath) => {
+                            const module: IResolverModule = {
+                                id: nodePath.value.source.value,
+                                context: dirname(nodePath.value.loc.filename),
+                            };
+                            
+                            this.nextModule(module);
+                        });
+                });
             }, 
             error: (err: Error) => {
                 console.error(err);
@@ -63,7 +64,16 @@ export default class Crawler {
             }
         });
 
-        return astStream;
+        return astListStream;
+    }
+
+    nextModule(module: IResolverModule): IResolverModule[] {
+        const modules: IResolverModule[] = this.moduleStream.getValue();
+        
+        modules.push(module);
+        this.moduleStream.next(modules);
+
+        return this.moduleStream.getValue();
     }
 
     getAST(module: ICrawlerModule): babelTypes.File { 
