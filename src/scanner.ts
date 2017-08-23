@@ -21,11 +21,15 @@ export default class Scanner {
      * - Egon Spengler
      */
     start(): void {
-        const astStreamScanned: Observable<babelTypes.File> = this.astStreamInput.map(ast => this.scanDeclaration(ast));
+        const astStreamScanned: Observable<babelTypes.File> = Observable.from(this.astStreamInput).map(ast => this.scanDeclaration(ast));
         
         astStreamScanned.subscribe({
             next: (ast: babelTypes.File) => {
-                console.info('== SCANNED', ast[0].value.loc.filename);
+                jscodeshift(ast)
+                    .find(jscodeshift.Program)
+                    .forEach(nodePath => {
+                        console.info('== FILE', nodePath.node.loc.filename);
+                    });
             },
             error: (err: Error) => {
                 console.error(err);
