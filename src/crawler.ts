@@ -52,7 +52,7 @@ export default class Crawler {
                 console.error(err);
             },
             complete: () => {
-                console.log('end');
+                console.log('Crawling completed');
             }
         });
 
