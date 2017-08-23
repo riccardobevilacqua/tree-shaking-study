@@ -15,46 +15,57 @@ export default class Crawler {
     encoding: string
     entryPoint: string
     resolver: Resolver = new Resolver()
-    moduleStream: BehaviorSubject<IResolverModule[]>
+    fileStream: BehaviorSubject<IResolverModule[]>
+    moduleStream: BehaviorSubject<ICrawlerModule[]>
 
     constructor(entryPoint: string, encoding: string = 'utf8') { 
         this.entryPoint = entryPoint;
         this.encoding = encoding;
         
-        this.moduleStream = new BehaviorSubject<IResolverModule[]>([{id: this.entryPoint}]);
+        this.start();
     }
 
     getASTStream(): Observable<babelTypes.File[]> {
-        const astListStream: Observable<babelTypes.File[]> = Observable
-            .of(this.moduleStream.getValue())
+        console.log('== GET AST STREAM');
+        const astListStream: Observable<babelTypes.File[]> = this.fileStream
             .map((files: IResolverModule[]) => {
                 return files
-                    .map(file => this.resolver.resolve(file))
+                    .map((file: IResolverModule) => {
+                        console.info('== RESOLVER MODULE', file);
+                        return this.resolver.resolve(file);
+                    })
                     .map((fullPath: string) => {
-                        console.log('== Processing file [' + fullPath + ']');
-                        return <ICrawlerModule>{
+                        const moduleSnapshot: ICrawlerModule[] = this.moduleStream.getValue();
+                        const crawlerModule: ICrawlerModule = {
                             code: readFileSync(fullPath, this.encoding),
                             fullPath
-                        }
+                        };
+
+                        console.info('== CRAWLER MODULE', crawlerModule);
+
+                        return crawlerModule;
                     })
-                    .map((module: ICrawlerModule) => this.getAST(module));
+                    .map((module: ICrawlerModule) => {
+                        return this.getAST(module);
+                    });
             })
             .share();
 
         astListStream.subscribe({
             next: (astList: babelTypes.File[]) => {
-                astList.map(ast => {
-                    return jscodeshift(ast)
-                        .find(jscodeshift.ImportDeclaration)
-                        .forEach((nodePath: jscodeshift.NodePath) => {
-                            const module: IResolverModule = {
-                                id: nodePath.value.source.value,
-                                context: dirname(nodePath.value.loc.filename),
-                            };
+                console.log('AST LIST', astList);
+                // astList.map(ast => {
+                //     return jscodeshift(ast)
+                //         .find(jscodeshift.ImportDeclaration)
+                //         .forEach((nodePath: jscodeshift.NodePath) => {
+                //             const module: IResolverModule = {
+                //                 id: nodePath.value.source.value,
+                //                 context: dirname(nodePath.value.loc.filename)
+                //             };
                             
-                            this.nextModule(module);
-                        });
-                });
+                //             this.nextModule(module);
+                //         });
+                // });
             }, 
             error: (err: Error) => {
                 console.error(err);
@@ -67,13 +78,13 @@ export default class Crawler {
         return astListStream;
     }
 
-    nextModule(module: IResolverModule): IResolverModule[] {
-        const modules: IResolverModule[] = this.moduleStream.getValue();
+    nextModule(file: IResolverModule): IResolverModule[] {
+        const files: IResolverModule[] = this.fileStream.getValue();
         
-        modules.push(module);
-        this.moduleStream.next(modules);
+        files.push(file);
+        this.fileStream.next(files);
 
-        return this.moduleStream.getValue();
+        return this.fileStream.getValue();
     }
 
     getAST(module: ICrawlerModule): babelTypes.File { 
@@ -82,5 +93,10 @@ export default class Crawler {
             sourceFilename: module.fullPath,
             sourceType: 'module'
         });  
+    }
+
+    start(): void {
+        console.log('==== CRAWLER START');
+        this.fileStream = new BehaviorSubject<IResolverModule[]>([{id: this.entryPoint}]);
     }
 }

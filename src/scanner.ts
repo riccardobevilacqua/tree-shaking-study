@@ -6,12 +6,10 @@ import { isDeclaration, increaseReference } from './jscodeshift-util';
 import Crawler from './crawler';
 
 export default class Scanner {
-    astStreamInput: Observable<babelTypes.File>
+    astListStreamInput: Observable<babelTypes.File[]>
 
     constructor(crawler: Crawler) { 
-        this.astStreamInput = crawler.getASTStream();
-
-        this.start();
+        this.astListStreamInput = crawler.getASTStream();
     }
 
     /**
@@ -21,23 +19,28 @@ export default class Scanner {
      * - Egon Spengler
      */
     start(): void {
-        const astStreamScanned: Observable<babelTypes.File> = Observable.from(this.astStreamInput).map(ast => this.scanDeclaration(ast)).take(1);
+        const astListStreamScanned: Observable<babelTypes.File[]> = Observable
+            .from(this.astListStreamInput)
+            .map((astList: babelTypes.File[]) => {
+                console.log('CHECK!');
+                return astList;
+            });
         
-        astStreamScanned.subscribe({
-            next: (ast: babelTypes.File) => {
-                jscodeshift(ast)
-                    .find(jscodeshift.Program)
-                    .forEach(nodePath => {
-                        console.info('== FILE', nodePath.node.loc.filename);
-                    });
-            },
-            error: (err: Error) => {
-                console.error(err);
-            },
-            complete: () => {
-                console.log('Scanned AST stream completed');
-            }
-        });
+        // astStreamScanned.subscribe({
+        //     next: (ast: babelTypes.File) => {
+        //         jscodeshift(ast)
+        //             .find(jscodeshift.Program)
+        //             .forEach(nodePath => {
+        //                 console.info('== FILE', nodePath.node.loc.filename);
+        //             });
+        //     },
+        //     error: (err: Error) => {
+        //         console.error(err);
+        //     },
+        //     complete: () => {
+        //         console.log('Scanned AST stream completed');
+        //     }
+        // });
     }
 
     /**
