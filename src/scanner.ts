@@ -21,7 +21,7 @@ export default class Scanner {
      * - Egon Spengler
      */
     start(): void {
-        const astStreamScanned: Observable<babelTypes.File> = Observable.from(this.astStreamInput).map(ast => this.scanDeclaration(ast));
+        const astStreamScanned: Observable<babelTypes.File> = Observable.from(this.astStreamInput).map(ast => this.scanDeclaration(ast)).take(1);
         
         astStreamScanned.subscribe({
             next: (ast: babelTypes.File) => {
@@ -35,7 +35,7 @@ export default class Scanner {
                 console.error(err);
             },
             complete: () => {
-                console.log('Scanning cross module completed');
+                console.log('Scanned AST stream completed');
             }
         });
     }
@@ -81,7 +81,7 @@ export default class Scanner {
                 console.error(err);
             },
             complete: () => {
-                console.log('Identifiers stream completed');
+                console.log('Declarations stream completed');
             }
         });
 
